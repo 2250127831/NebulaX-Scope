@@ -5,16 +5,16 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux-FFD700?logo=linux)](https://kernel.org)
 
-**Real-time shared-memory telemetry dashboard for high-performance trading systems.**
+**高性能交易系统的共享内存实时监控仪表盘。**
 
-NebulaX-Scope is a standalone monitoring tool that reads `/dev/shm` shared memory from [NebulaX](https://github.com/user/NebulaX) — a low-latency exchange matching engine — and visualises internal metrics via a GPU-accelerated Qt6 QML interface.
+NebulaX-Scope 是一个独立监控进程，通过 `mmap` 只读方式读取 [NebulaX](https://github.com/user/NebulaX) 撮合引擎的共享内存指标，通过 Qt6 QML GPU 加速界面实时可视化。
 
-> **Zero-instrumentation.** No changes to the monitored service. No agents, no IPC, no network overhead.
-> Read-only `mmap` of 152 bytes across two shared-memory files — the rest is derived metrics.
+> **零侵入**。不需要修改被监控服务的代码，不需要 Agent，不需要 IPC，没有网络开销。
+> 只读取 152 字节共享内存，其余指标全部派生计算。
 
 ---
 
-## Dashboard
+## 仪表盘
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -41,71 +41,71 @@ NebulaX-Scope is a standalone monitoring tool that reads `/dev/shm` shared memor
 
 ---
 
-## Architecture
+## 架构
 
 ```
  ┌─────────────────────────────────────────────────────────────┐
- │                    NebulaX (C++)                             │
- │  writes: /dev/shm/nebulaX_metrics  (128 B, 16 × uint64_t)  │
- │          /dev/shm/nebulaX_ring     ( 24 B,  3 × uint64_t)  │
+ │                    NebulaX (C++ 撮合引擎)                     │
+ │  写 /dev/shm/nebulaX_metrics  (128 B, 16 × uint64_t)       │
+ │        /dev/shm/nebulaX_ring   ( 24 B,  3 × uint64_t)      │
  └────────────────────┬────────────────────────────────────────┘
-                      │ mmap (read-only)
+                      │ mmap (只读)
                       ▼
  ┌─────────────────────────────────────────────────────────────┐
- │  SharedMemoryMonitor (QObject, QML singleton)               │
+ │  SharedMemoryMonitor (QObject, QML 单例)                    │
  │  ┌───────────────────────────────────────────────────────┐  │
- │  │ QTimer 8 ms (120 Hz) → poll() -> emit signals        │  │
- │  │   ├── ringUpdated()   →  RingTelemetry (Canvas)       │  │
- │  │   ├── poolUpdated()   →  OrderPoolBar (progress bar)  │  │
- │  │   └── updated()       →  MetricCard (text, 4 Hz)      │  │
+ │  │ QTimer 8ms (120Hz) → poll() → emit 信号体系          │  │
+ │  │   ├── ringUpdated()   →  RingTelemetry (Canvas 圆环)  │  │
+ │  │   ├── poolUpdated()   →  OrderPoolBar (进度条)        │  │
+ │  │   └── updated()       →  MetricCard (文字, 4Hz)       │  │
  │  └───────────────────────────────────────────────────────┘  │
  └────────────────────┬────────────────────────────────────────┘
-                      │ QML binding (declarative, GPU-scene-graph)
+                      │ QML 声明式绑定 (GPU 场景图)
                       ▼
  ┌─────────────────────────────────────────────────────────────┐
- │  ScopeWindow.qml (ApplicationWindow, Frameless)             │
- │  ├── MetricCard.qml     (smooth number animation)           │
- │  ├── RingTelemetry.qml  (Canvas ring + breathing glow)      │
- │  ├── OrderPoolBar.qml   (progress bar + shimmer)            │
- │  └── Status bar         (thread liveness, PID, uptime)      │
+ │  ScopeWindow.qml (无边框窗口)                                │
+ │  ├── MetricCard.qml     (平滑数字动画)                       │
+ │  ├── RingTelemetry.qml  (Canvas 圆环 + 呼吸光晕)              │
+ │  ├── OrderPoolBar.qml   (进度条 + 流光)                     │
+ │  └── 状态栏             (线程存活, PID, 运行时间)             │
  └─────────────────────────────────────────────────────────────┘
 ```
 
-### Key design decisions
+### 关键设计决策
 
-| Decision | Rationale |
-|----------|-----------|
-| **Shared memory** vs TCP/UDP | Zero-copy, no context switch, ~50 ns latency |
-| **`mmap` only 152 B** (not 340 MB book file) | Avoids faulting in pages from the giant order-book shm |
-| **C++ backend, QML frontend** | Qt6 declarative bindings eliminate glue code |
-| **3 independent update signals** | Ring (120 Hz) / Pool (120 Hz) / Text (4 Hz) — no wasteful repaints |
-| **Canvas 2D** vs Qt Charts / Shapes | Qt 6.2 Shapes has sweep-angle bugs; Canvas is reliable and well-tested |
-| **Auto-reconnect** | Poll every 2 s when NebulaX restarts — no manual relaunch |
+| 决策 | 原因 |
+|------|------|
+| **共享内存** vs TCP/UDP | 零拷贝，无上下文切换，~50ns 延迟 |
+| **只 mmap 152 字节**（不读 340MB 订单簿） | 避免触发巨量缺页中断 |
+| **C++ 后端 + QML 前端** | Qt6 声明式绑定省掉胶水代码 |
+| **3 路独立更新信号** | Ring(120Hz) / Pool(120Hz) / 文字(4Hz) — 不浪费重绘 |
+| **Canvas 2D** vs Qt Charts / Shapes | Qt 6.2 Shapes 的 sweepAngle 有 bug；Canvas 可靠且经过充分测试 |
+| **自动重连** | NebulaX 重启后每 2s 自动重连，无需手动重新启动 |
 
 ---
 
-## Shared Memory Layout
+## 共享内存布局
 
-### `/dev/shm/nebulaX_metrics` — 128 bytes
+### `/dev/shm/nebulaX_metrics` — 128 字节
 
-| Offset | Field | Source | Description |
-|--------|-------|--------|-------------|
-| 0 | `io_thread_pid` | main | IO thread PID (set once at startup) |
-| 1 | `send_thread_pid` | main | Send thread PID |
-| 2 | `recv_frames` | IO | Completed recv CQEs |
-| 3 | `new_orders` | IO | New order count |
-| 4 | `cancels` | IO | Cancel count |
-| 5 | `book_queries` | IO | Order-book query count |
-| 6 | `trades` | IO | Trade count |
-| 7 | `errors` | IO | Error count |
-| 8 | `order_pool_used` | IO | Live orders in pool |
-| 9 | `order_pool_capacity` | IO | Pool capacity (fixed 4M) |
-| 10 | `tick_counter` | IO | Incremented each IO loop |
-| 11 | `send_batches` | Send | Send batch count |
-| 12 | `send_bytes` | Send | Total bytes sent |
-| 13 | `send_zc_ok` | Send | Zero-copy success count |
-| 14 | `send_zc_fail` | Send | Zero-copy fallback count |
-| 15 | `send_tick_counter` | Send | Incremented each Send loop |
+| 偏移 | 字段 | 写入者 | 说明 |
+|------|------|--------|------|
+| 0 | `io_thread_pid` | main | IO 线程 PID（启动时设一次）|
+| 1 | `send_thread_pid` | main | Send 线程 PID |
+| 2 | `recv_frames` | IO | 已完成的 recv CQE 数 |
+| 3 | `new_orders` | IO | 新订单数 |
+| 4 | `cancels` | IO | 撤单数 |
+| 5 | `book_queries` | IO | 行情查询数 |
+| 6 | `trades` | IO | 成交笔数 |
+| 7 | `errors` | IO | 错误数 |
+| 8 | `order_pool_used` | IO | 订单池当前活单数 |
+| 9 | `order_pool_capacity` | IO | 订单池总容量（固定 4M）|
+| 10 | `tick_counter` | IO | 每次 IO 循环 +1 |
+| 11 | `send_batches` | Send | 发送批次数 |
+| 12 | `send_bytes` | Send | 发送总字节数 |
+| 13 | `send_zc_ok` | Send | 零拷贝发送成功数 |
+| 14 | `send_zc_fail` | Send | 零拷贝失败回落数 |
+| 15 | `send_tick_counter` | Send | 每次 Send 循环 +1 |
 
 ```python
 import mmap, os, struct
@@ -114,27 +114,27 @@ mm = mmap.mmap(fd, 128, mmap.MAP_SHARED, mmap.PROT_READ)
 io_pid, send_pid, _, orders, *_ = struct.unpack_from("<16Q", mm, 0)
 ```
 
-### `/dev/shm/nebulaX_ring` — 24 bytes
+### `/dev/shm/nebulaX_ring` — 24 字节
 
-| Offset | Field | Description |
-|--------|-------|-------------|
-| 0 | `tail` | IO thread write position (ring-relative offset 0..capacity) |
-| 1 | `head` | Send thread read position |
-| 2 | `capacity` | Ring capacity (fixed 8 MB) |
+| 偏移 | 字段 | 说明 |
+|------|------|------|
+| 0 | `tail` | IO 线程写入位置（环内偏移 0..capacity）|
+| 1 | `head` | Send 线程读取位置 |
+| 2 | `capacity` | 环总容量（固定 8MB）|
 
-Derived: `used = tail - head` (mod capacity), `utilisation = used / capacity`
+派生：`used = tail - head`（模 capacity），`利用率 = used / capacity`
 
 ---
 
-## Build & Run
+## 构建与运行
 
-### Prerequisites
+### 依赖
 
 ```bash
 sudo apt install qt6-base-dev qt6-declarative-dev
 ```
 
-### Build
+### 构建
 
 ```bash
 cd NebulaX-Scope
@@ -142,133 +142,133 @@ rm -rf build && mkdir build && cd build
 cmake .. && make -j$(nproc)
 ```
 
-### Run
+### 运行
 
-1. Start NebulaX:
+1. 先启动 NebulaX：
 
 ```bash
 taskset -c 6,7 /path/to/nebulaX 2250 --io-core 6 --send-core 7 &
 ```
 
-2. Launch Scope:
+2. 启动 Scope：
 
 ```bash
 ./build/scope
 ```
 
-The dashboard auto-connects to shared memory and displays live metrics. Reconnects automatically if NebulaX restarts.
+仪表盘自动连接共享内存并显示实时指标。NebulaX 重启后会自动重连。
 
 ---
 
-## Backend API Reference (QML)
+## QML 后端 API 参考
 
-The C++ class `SharedMemoryMonitor` is registered as the QML singleton `Monitor` (module `NebulaX.Scope`).
+C++ 类 `SharedMemoryMonitor` 注册为 QML 单例 `Monitor`（模块 `NebulaX.Scope`）。
 
 ```qml
 import NebulaX.Scope 1.0
 
-Text { text: Monitor.qps }                 // real-time QPS
-Text { text: Monitor.ioAlive }             // IO thread health
+Text { text: Monitor.qps }            // 实时 QPS
+Text { text: Monitor.ioAlive }        // IO 线程健康状态
 ```
 
-### Properties
+### 属性
 
-| Property | Type | Signal | Rate | Description |
-|----------|------|--------|------|-------------|
-| `qps` | double | `updated` | 4 Hz | Orders per second |
-| `orderRate` | double | `updated` | 4 Hz | New order rate |
-| `tradeRate` | double | `updated` | 4 Hz | Trade rate |
-| `sendThroughput` | double | `updated` | 4 Hz | Send throughput (bytes/s) |
-| `zcRate` | double | `updated` | 4 Hz | Zero-copy success rate |
-| `totalOrders` | uint64 | `updated` | 4 Hz | Cumulative orders |
-| `totalTrades` | uint64 | `updated` | 4 Hz | Cumulative trades |
-| `errors` | uint64 | `updated` | 4 Hz | Error count |
-| `ioAlive` | bool | `updated` | 4 Hz | IO thread healthy |
-| `sendAlive` | bool | `updated` | 4 Hz | Send thread healthy |
-| `ioPid` | uint64 | `updated` | 4 Hz | IO thread PID |
-| `sendPid` | uint64 | `updated` | 4 Hz | Send thread PID |
-| `uptimeSeconds` | int | `updated` | 4 Hz | Session uptime |
-| `poolUtilization` | double | `poolUpdated` | 120 Hz | Order pool fill ratio |
-| `orderPoolUsed` | uint64 | `poolUpdated` | 120 Hz | Live pool entries |
-| `orderPoolCapacity` | uint64 | `poolUpdated` | 120 Hz | Pool capacity (4,194,304) |
-| `ringReadPtr` | uint64 | `ringUpdated` | 120 Hz | Ring tail (IO write pos) |
-| `ringWritePtr` | uint64 | `ringUpdated` | 120 Hz | Ring head (Send read pos) |
-| `ringUsedBytes` | uint64 | `ringUpdated` | 120 Hz | Bytes occupied |
-| `ringCapacity` | uint64 | `ringUpdated` | 120 Hz | Ring capacity (8,388,608) |
-| `ringUtilization` | double | `ringUpdated` | 120 Hz | Ring fill ratio |
-| `connected` | bool | `connectedChanged` | event | Shared memory reachable |
+| 属性 | 类型 | 信号 | 频率 | 说明 |
+|------|------|------|------|------|
+| `qps` | double | `updated` | 4Hz | 每秒订单数 |
+| `orderRate` | double | `updated` | 4Hz | 新订单速率 |
+| `tradeRate` | double | `updated` | 4Hz | 成交速率 |
+| `sendThroughput` | double | `updated` | 4Hz | 发送吞吐量 (bytes/s) |
+| `zcRate` | double | `updated` | 4Hz | 零拷贝成功率 |
+| `totalOrders` | uint64 | `updated` | 4Hz | 累计订单数 |
+| `totalTrades` | uint64 | `updated` | 4Hz | 累计成交数 |
+| `errors` | uint64 | `updated` | 4Hz | 错误数 |
+| `ioAlive` | bool | `updated` | 4Hz | IO 线程存活 |
+| `sendAlive` | bool | `updated` | 4Hz | Send 线程存活 |
+| `ioPid` | uint64 | `updated` | 4Hz | IO 线程 PID |
+| `sendPid` | uint64 | `updated` | 4Hz | Send 线程 PID |
+| `uptimeSeconds` | int | `updated` | 4Hz | 运行时长 |
+| `poolUtilization` | double | `poolUpdated` | 120Hz | 订单池占用比 |
+| `orderPoolUsed` | uint64 | `poolUpdated` | 120Hz | 池中活单数 |
+| `orderPoolCapacity` | uint64 | `poolUpdated` | 120Hz | 池总容量 (4,194,304) |
+| `ringReadPtr` | uint64 | `ringUpdated` | 120Hz | 环尾指针（IO 写入位置）|
+| `ringWritePtr` | uint64 | `ringUpdated` | 120Hz | 环头指针（Send 读取位置）|
+| `ringUsedBytes` | uint64 | `ringUpdated` | 120Hz | 环已用字节数 |
+| `ringCapacity` | uint64 | `ringUpdated` | 120Hz | 环总容量 (8,388,608) |
+| `ringUtilization` | double | `ringUpdated` | 120Hz | 环占用比 |
+| `connected` | bool | `connectedChanged` | 事件 | 共享内存是否可达 |
 
-### Signals
+### 信号
 
 ```qml
-Monitor.updated()            // text metrics refreshed
-Monitor.poolUpdated()        // pool bar refreshed
-Monitor.ringUpdated()        // ring canvas refreshed
-Monitor.connectedChanged()   // connection status changed
+Monitor.updated()            // 文字指标刷新
+Monitor.poolUpdated()        // 池进度条刷新
+Monitor.ringUpdated()        // 环 Canvas 刷新
+Monitor.connectedChanged()   // 连接状态变化
 ```
 
 ---
 
-## Scripts
+## 脚本
 
-| Script | Purpose |
-|--------|---------|
-| [`buy.py`](scripts/buy.py) | Send N BUY orders at a given price |
-| [`sell.py`](scripts/sell.py) | Send N SELL orders at a given price |
-| [`bench_backpressure.py`](scripts/bench_backpressure.py) | Sustained ring pressure test with adaptive back-pressure |
-| [`test_read_shm.cpp`](scripts/test_read_shm.cpp) | Minimal C++ shared-memory reader (no Qt) |
+| 脚本 | 用途 |
+|------|------|
+| [`buy.py`](scripts/buy.py) | 指定价格发 N 笔 BUY 订单 |
+| [`sell.py`](scripts/sell.py) | 指定价格发 N 笔 SELL 订单 |
+| [`bench_backpressure.py`](scripts/bench_backpressure.py) | 持续环压力测试，自适应反压控制 |
+| [`test_read_shm.cpp`](scripts/test_read_shm.cpp) | 最小 C++ 共享内存读取示例（无 Qt）|
 
 ---
 
-## Derived Metrics
+## 派生指标
 
-| Metric | Formula | Source |
-|--------|---------|--------|
+| 指标 | 公式 | 数据源 |
+|------|------|--------|
 | QPS | `Δorders / Δt` | `new_orders` |
-| Trade rate | `Δtrades / Δt` | `trades` |
-| Send throughput | `Δbytes / Δt` | `send_bytes` |
-| ZC success rate | `zc_ok / (zc_ok + zc_fail)` | `send_zc_ok/fail` |
-| Pool utilisation | `pool_used / pool_capacity` | `order_pool_used/capacity` |
-| Ring utilisation | `used / capacity` | `tail, head` |
-| IO alive | `tick_counter` changed in < 3 s | `tick_counter` |
-| Send alive | `send_tick_counter` changed in < 3 s | `send_tick_counter` |
+| 成交率 | `Δtrades / Δt` | `trades` |
+| 发送吞吐 | `Δbytes / Δt` | `send_bytes` |
+| ZC 成功率 | `zc_ok / (zc_ok + zc_fail)` | `send_zc_ok/fail` |
+| 池利用率 | `pool_used / pool_capacity` | `order_pool_used/capacity` |
+| 环利用率 | `used / capacity` | `tail, head` |
+| IO 存活 | 3 秒内 `tick_counter` 是否递增 | `tick_counter` |
+| Send 存活 | 3 秒内 `send_tick_counter` 是否递增 | `send_tick_counter` |
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 NebulaX-Scope/
-├── CMakeLists.txt                # qt_add_qml_module declarative build
+├── CMakeLists.txt                # qt_add_qml_module 声明式构建
 ├── README.md
 ├── qml/
-│   ├── ScopeWindow.qml           # Main window (frameless, rounded)
-│   ├── MetricCard.qml            # Metric card with smooth number animation
-│   ├── RingTelemetry.qml         # Canvas ring with breathing glow
-│   └── OrderPoolBar.qml          # Progress bar with shimmer
+│   ├── ScopeWindow.qml           # 主窗口（无边框、圆角）
+│   ├── MetricCard.qml            # 指标卡片（平滑数字动画）
+│   ├── RingTelemetry.qml         # Canvas 圆环（呼吸光晕）
+│   └── OrderPoolBar.qml          # 进度条（流光效果）
 ├── src/
-│   ├── main.cpp                  # Entry point, singleton registration
-│   ├── SharedMemoryMonitor.h     # 22 Q_PROPERTY declarations
-│   └── SharedMemoryMonitor.cpp   # mmap, poll, reconnect logic
+│   ├── main.cpp                  # 入口、单例注册
+│   ├── SharedMemoryMonitor.h     # 22 个 Q_PROPERTY 声明
+│   └── SharedMemoryMonitor.cpp   # mmap、轮询、重连逻辑
 └── scripts/
-    ├── buy.py                    # Order injection tool
-    ├── sell.py                   # Order injection tool
-    ├── bench_backpressure.py     # Ring pressure test
-    └── test_read_shm.cpp         # Standalone shm reader (no Qt)
+    ├── buy.py                    # 发单工具
+    ├── sell.py                   # 发单工具
+    ├── bench_backpressure.py     # 环压力测试
+    └── test_read_shm.cpp         # 独立共享内存读取示例（无 Qt）
 ```
 
 ---
 
-## Why not …?
+## 为什么不用…？
 
-**Qt Charts?** — Avoids an extra dependency; Canvas gives full control over rendering and is already GPU-accelerated via the Qt Quick scene graph when used with the `rhi` backend.
+**Qt Charts？** 避免额外依赖。Canvas 在 Qt6 `rhi` 后端下同样通过 GPU 场景图加速，且渲染完全可控。
 
-**Web-based dashboard?** — A web frontend (Grafana, etc.) would require exposing metrics over HTTP, adding latency and surface area. Shared-memory `mmap` is the lowest-overhead path to the data.
+**Web 面板？** Web 前端（Grafana 等）需要暴露 HTTP 接口，增加延迟和攻击面。共享内存 mmap 是到数据的最低开销路径。
 
-**Widgets?** — QML's declarative bindings (`Q_PROPERTY ... NOTIFY`) eliminate glue code. The same feature set in Widgets would require 3× more C++ for `setText()` calls and timer bookkeeping.
+**Widgets？** QML 的声明式绑定（`Q_PROPERTY ... NOTIFY`）省掉了胶水代码。同样功能用 Widgets 需要 3 倍以上的 C++ 代码来手动 `setText()` 和定时器管理。
 
 ---
 
-## License
+## 许可证
 
 MIT
