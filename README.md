@@ -8,7 +8,7 @@
 **高性能交易系统的共享内存实时监控仪表盘。**
 
 <p align="center">
-  <a href="assets/demo.mp4">▶ 点击观看演示视频（MP4）</a>
+  <video src="https://github.com/2250127831/NebulaX-Scope/raw/main/assets/demo.mp4" width="720" controls></video>
 </p>
 
 NebulaX-Scope 是一个独立监控进程，通过 `mmap` 只读方式读取 [NebulaX](https://github.com/user/NebulaX) 撮合引擎的共享内存指标，通过 Qt6 QML GPU 加速界面实时可视化。
