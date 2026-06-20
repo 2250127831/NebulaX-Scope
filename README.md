@@ -11,7 +11,7 @@
   <img src="assets/demo.gif" alt="NebulaX-Scope 演示" width="720">
 </p>
 
-NebulaX-Scope 是一个独立监控进程，通过 `mmap` 只读方式读取 [NebulaX](https://github.com/user/NebulaX) 撮合引擎的共享内存指标，通过 Qt6 QML GPU 加速界面实时可视化。
+NebulaX-Scope 是一个独立监控进程，通过 `mmap` 只读方式读取 [NebulaX](https://github.com/2250127831/NebulaX) 撮合引擎的共享内存指标，通过 Qt6 QML GPU 加速界面实时可视化。
 
 > **零侵入**。不需要修改被监控服务的代码，不需要 Agent，不需要 IPC，没有网络开销。
 > 只读取 152 字节共享内存，其余指标全部派生计算。
@@ -124,7 +124,7 @@ cmake .. && make -j$(nproc)
 1. 先启动 NebulaX：
 
 ```bash
-taskset -c 6,7 /path/to/nebulaX 2250 --io-core 6 --send-core 7 &
+taskset -c 6,7 /path/to/NebulaX/build/nebulaX 2250 --io-core 6 --send-core 7 &
 ```
 
 2. 启动 Scope：
