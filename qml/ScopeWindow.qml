@@ -110,6 +110,31 @@ ApplicationWindow {
                 }
 
                 Rectangle {
+                    id: maxBtn
+                    width: 36; height: 36; radius: 6; color: "transparent"
+                    property bool maximized: false
+                    Text {
+                        anchors.centerIn: parent
+                        text: maxBtn.maximized ? "❐" : "□"
+                        color: "#94A3B8"; font.pixelSize: 14
+                    }
+                    MouseArea {
+                        anchors.fill: parent; hoverEnabled: true
+                        onEntered: parent.color = "#1E293B"
+                        onExited:  parent.color = "transparent"
+                        onClicked: {
+                            if (maxBtn.maximized) {
+                                root.showNormal()
+                                maxBtn.maximized = false
+                            } else {
+                                root.showMaximized()
+                                maxBtn.maximized = true
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
                     id: closeBtn
                     width: 36; height: 36; radius: 6; color: "transparent"
                     Text {
